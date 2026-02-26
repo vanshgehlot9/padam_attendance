@@ -12,6 +12,10 @@ function getAdminApp() {
     if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
         try {
             const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+            // Fix Vercel's escaped newlines in the private key
+            if (serviceAccount.private_key) {
+                serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+            }
             credential = cert(serviceAccount);
         } catch (error) {
             console.error("Error parsing FIREBASE_SERVICE_ACCOUNT_KEY:", error);
@@ -29,4 +33,16 @@ function getAdminApp() {
     });
 }
 
-export const adminAuth = getAuth(getAdminApp());
+// Lazy initialization — admin SDK is server-only and must not init during build
+let _adminAuth: ReturnType<typeof getAuth> | null = null;
+export function getAdminAuth() {
+    if (!_adminAuth) _adminAuth = getAuth(getAdminApp());
+    return _adminAuth;
+}
+
+// Backward-compatible export (used by API routes)
+export const adminAuth = new Proxy({} as ReturnType<typeof getAuth>, {
+    get(_, prop) {
+        return (getAdminAuth() as any)[prop];
+    },
+});

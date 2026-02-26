@@ -15,15 +15,18 @@ const STYLES = {
     SATELLITE: {
         version: 8,
         sources: {
-            "esri-satellite": {
+            "satellite-tiles": {
                 type: "raster",
-                tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+                tiles: [
+                    "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                    "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+                ],
                 tileSize: 256,
-                attribution: "&copy; Esri"
+                attribution: "&copy; Google"
             }
         },
         layers: [
-            { id: "satellite", type: "raster", source: "esri-satellite", minzoom: 0, maxzoom: 22 }
+            { id: "satellite", type: "raster", source: "satellite-tiles", minzoom: 0, maxzoom: 22 }
         ]
     } as any,
     DARK: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",

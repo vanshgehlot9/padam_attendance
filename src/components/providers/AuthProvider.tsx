@@ -7,7 +7,7 @@ import {
     signOut,
     User,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import { getEmployee, Employee } from "@/lib/firestore";
 
 interface AuthContextType {
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        const unsubscribe = onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
             setUser(firebaseUser);
             if (firebaseUser) {
                 // Try to fetch employee data using UID as employee ID
@@ -57,11 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const login = async (email: string, password: string) => {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
     };
 
     const logout = async () => {
-        await signOut(auth);
+        await signOut(getFirebaseAuth());
         setEmployeeData(null);
     };
 

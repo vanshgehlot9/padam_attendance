@@ -3,7 +3,7 @@ import {
     query, where, orderBy, Timestamp, serverTimestamp
 } from "firebase/firestore";
 import { ref, set, get, child } from "firebase/database";
-import { db, rtdb } from "./firebase";
+import { getDb, getRtdb } from "./firebase";
 
 // ==================== TYPES ====================
 
@@ -62,27 +62,25 @@ export interface HeartbeatRecord {
 
 // ==================== EMPLOYEES ====================
 
-const employeesCol = collection(db, "employees");
-
 export async function getAllEmployees(): Promise<Employee[]> {
-    const snap = await getDocs(employeesCol);
+    const snap = await getDocs(collection(getDb(), "employees"));
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as Employee));
 }
 
 export async function getActiveEmployees(): Promise<Employee[]> {
-    const q = query(employeesCol, where("active", "==", true));
+    const q = query(collection(getDb(), "employees"), where("active", "==", true));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as Employee));
 }
 
 export async function getEmployee(id: string): Promise<Employee | null> {
-    const snap = await getDoc(doc(db, "employees", id));
+    const snap = await getDoc(doc(getDb(), "employees", id));
     if (!snap.exists()) return null;
     return { id: snap.id, ...snap.data() } as Employee;
 }
 
 export async function addEmployee(data: Omit<Employee, "id" | "createdAt">): Promise<Employee> {
-    const docRef = await addDoc(employeesCol, {
+    const docRef = await addDoc(collection(getDb(), "employees"), {
         ...data,
         createdAt: Date.now(),
     });
@@ -90,7 +88,7 @@ export async function addEmployee(data: Omit<Employee, "id" | "createdAt">): Pro
 }
 
 export async function updateEmployee(id: string, updates: Partial<Employee>): Promise<Employee | null> {
-    const docRef = doc(db, "employees", id);
+    const docRef = doc(getDb(), "employees", id);
     const snap = await getDoc(docRef);
     if (!snap.exists()) return null;
     await updateDoc(docRef, updates);
@@ -99,17 +97,15 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
 
 // ==================== ATTENDANCE ====================
 
-const attendanceCol = collection(db, "attendance");
-
 export async function getAttendance(date?: string): Promise<AttendanceRecord[]> {
     const d = date || new Date().toISOString().split("T")[0];
-    const q = query(attendanceCol, where("date", "==", d));
+    const q = query(collection(getDb(), "attendance"), where("date", "==", d));
     const snap = await getDocs(q);
     return snap.docs.map(doc => doc.data() as AttendanceRecord);
 }
 
 export async function getAttendanceForEmployee(employeeId: string): Promise<AttendanceRecord[]> {
-    const q = query(attendanceCol, where("employeeId", "==", employeeId));
+    const q = query(collection(getDb(), "attendance"), where("employeeId", "==", employeeId));
     const snap = await getDocs(q);
     return snap.docs.map(doc => doc.data() as AttendanceRecord);
 }
@@ -117,38 +113,36 @@ export async function getAttendanceForEmployee(employeeId: string): Promise<Atte
 export async function markAttendance(record: AttendanceRecord): Promise<void> {
     // Use composite key: employeeId_date
     const docId = `${record.employeeId}_${record.date}`;
-    await setDoc(doc(db, "attendance", docId), record, { merge: true });
+    await setDoc(doc(getDb(), "attendance", docId), record, { merge: true });
 }
 
 // ==================== DEALS ====================
 
-const dealsCol = collection(db, "deals");
-
 export async function getDeals(): Promise<DealSubmission[]> {
-    const snap = await getDocs(dealsCol);
+    const snap = await getDocs(collection(getDb(), "deals"));
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as DealSubmission));
 }
 
 export async function getDealsForEmployee(employeeId: string): Promise<DealSubmission[]> {
-    const q = query(dealsCol, where("employeeId", "==", employeeId));
+    const q = query(collection(getDb(), "deals"), where("employeeId", "==", employeeId));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as DealSubmission));
 }
 
 export async function addDeal(data: Omit<DealSubmission, "id">): Promise<DealSubmission> {
-    const docRef = await addDoc(dealsCol, data);
+    const docRef = await addDoc(collection(getDb(), "deals"), data);
     return { id: docRef.id, ...data };
 }
 
 // ==================== HEARTBEATS (Realtime DB) ====================
 
 export async function setHeartbeat(employeeId: string, data: HeartbeatRecord): Promise<void> {
-    const heartbeatRef = ref(rtdb, `heartbeats/${employeeId}`);
+    const heartbeatRef = ref(getRtdb(), `heartbeats/${employeeId}`);
     await set(heartbeatRef, data);
 }
 
 export async function getAllHeartbeats(): Promise<Record<string, HeartbeatRecord>> {
-    const snapshot = await get(child(ref(rtdb), "heartbeats"));
+    const snapshot = await get(child(ref(getRtdb()), "heartbeats"));
     if (snapshot.exists()) {
         return snapshot.val() as Record<string, HeartbeatRecord>;
     }
@@ -158,7 +152,7 @@ export async function getAllHeartbeats(): Promise<Record<string, HeartbeatRecord
 // ==================== SETTINGS ====================
 
 export async function getOfficeLocation(): Promise<OfficeLocation> {
-    const snap = await getDoc(doc(db, "settings", "office"));
+    const snap = await getDoc(doc(getDb(), "settings", "office"));
     if (snap.exists()) {
         return snap.data() as OfficeLocation;
     }
@@ -172,7 +166,7 @@ export async function getOfficeLocation(): Promise<OfficeLocation> {
 }
 
 export async function saveOfficeLocation(location: OfficeLocation): Promise<void> {
-    await setDoc(doc(db, "settings", "office"), location);
+    await setDoc(doc(getDb(), "settings", "office"), location);
 }
 
 // ==================== DASHBOARD STATS ====================
@@ -207,22 +201,20 @@ export interface Alert {
     read: boolean;
 }
 
-const alertsCol = collection(db, "alerts");
-
 export async function addAlert(data: Omit<Alert, "id">): Promise<Alert> {
-    const docRef = await addDoc(alertsCol, data);
+    const docRef = await addDoc(collection(getDb(), "alerts"), data);
     return { id: docRef.id, ...data };
 }
 
 export async function getAlerts(limit?: number): Promise<Alert[]> {
-    const q = query(alertsCol, orderBy("timestamp", "desc"));
+    const q = query(collection(getDb(), "alerts"), orderBy("timestamp", "desc"));
     const snap = await getDocs(q);
     const alerts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Alert));
     return limit ? alerts.slice(0, limit) : alerts;
 }
 
 export async function markAlertRead(alertId: string): Promise<void> {
-    await updateDoc(doc(db, "alerts", alertId), { read: true });
+    await updateDoc(doc(getDb(), "alerts", alertId), { read: true });
 }
 
 // ==================== LOCATION HISTORY (FOR REPLAY & HEATMAP) ====================
@@ -236,7 +228,7 @@ export interface LocationHistoryContent {
 
 export async function addLocationHistory(employeeId: string, data: LocationHistoryContent): Promise<void> {
     const today = new Date(data.timestamp).toISOString().split("T")[0];
-    const historyCol = collection(db, "employees", employeeId, "location_history");
+    const historyCol = collection(getDb(), "employees", employeeId, "location_history");
     const docRef = doc(historyCol, today);
 
     const snap = await getDoc(docRef);
@@ -253,7 +245,7 @@ export async function addLocationHistory(employeeId: string, data: LocationHisto
 }
 
 export async function getLocationHistory(employeeId: string, date: string): Promise<LocationHistoryContent[]> {
-    const docRef = doc(db, "employees", employeeId, "location_history", date);
+    const docRef = doc(getDb(), "employees", employeeId, "location_history", date);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
         return snap.data().locations || [];

@@ -6,7 +6,7 @@ import {
 } from "@/lib/firestore";
 import { adminAuth } from "@/lib/firebase-admin";
 import { doc, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDb } from "@/lib/firebase";
 
 export async function GET() {
     try {
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
             createdAt: Date.now(),
         };
 
-        await setDoc(doc(db, "employees", userRecord.uid), employeeData);
+        await setDoc(doc(getDb(), "employees", userRecord.uid), employeeData);
 
         return NextResponse.json({
             employee: { id: userRecord.uid, ...employeeData },

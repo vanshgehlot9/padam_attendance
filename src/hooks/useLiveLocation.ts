@@ -227,7 +227,8 @@ export function useLiveLocation(employeeId: string) {
         const fetchExisting = async () => {
             try {
                 const { doc, getDoc } = await import("firebase/firestore");
-                const { db } = await import("@/lib/firebase");
+                const { getDb } = await import("@/lib/firebase");
+                const db = getDb();
 
                 const today = new Date().toISOString().split("T")[0];
 

@@ -7,12 +7,26 @@ function getAdminApp() {
         return getApps()[0];
     }
 
-    // Use service account key file
-    const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-        path.join(process.cwd(), "attenance-pe-firebase-adminsdk-fbsvc-05b09c6c4f.json");
+    let credential;
+
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+        // In Vercel, use the stringified JSON from environment variables
+        try {
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+            credential = cert(serviceAccount);
+        } catch (error) {
+            console.error("Error parsing FIREBASE_SERVICE_ACCOUNT_KEY:", error);
+            throw error;
+        }
+    } else {
+        // Local development fallback
+        const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+            path.join(process.cwd(), "attenance-pe-firebase-adminsdk-fbsvc-05b09c6c4f.json");
+        credential = cert(serviceAccountPath);
+    }
 
     return initializeApp({
-        credential: cert(serviceAccountPath),
+        credential,
         databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
     });
 }

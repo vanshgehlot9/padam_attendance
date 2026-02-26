@@ -1,5 +1,5 @@
 import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAuth, Auth } from "firebase-admin/auth";
 import path from "path";
 
 function getAdminApp() {
@@ -31,4 +31,11 @@ function getAdminApp() {
     });
 }
 
-export const adminAuth = getAuth(getAdminApp());
+// Lazy initialization — only runs at runtime, not during build
+let _adminAuth: Auth | null = null;
+export const adminAuth: Auth = new Proxy({} as Auth, {
+    get(_, prop) {
+        if (!_adminAuth) _adminAuth = getAuth(getAdminApp());
+        return (_adminAuth as any)[prop];
+    },
+});

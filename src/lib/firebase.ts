@@ -1,7 +1,7 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getDatabase } from "firebase/database";
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getFirestore, Firestore } from "firebase/firestore";
+import { getAuth, Auth } from "firebase/auth";
+import { getDatabase, Database } from "firebase/database";
 
 const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -14,10 +14,35 @@ const firebaseConfig = {
     measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase (singleton)
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+function getFirebaseApp(): FirebaseApp {
+    return getApps().length ? getApp() : initializeApp(firebaseConfig);
+}
 
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-export const rtdb = getDatabase(app);
-export default app;
+// Lazy singletons — only initialized when first accessed at runtime
+let _db: Firestore | null = null;
+let _auth: Auth | null = null;
+let _rtdb: Database | null = null;
+
+export const db: Firestore = new Proxy({} as Firestore, {
+    get(_, prop) {
+        if (!_db) _db = getFirestore(getFirebaseApp());
+        return (_db as any)[prop];
+    },
+});
+
+export const auth: Auth = new Proxy({} as Auth, {
+    get(_, prop) {
+        if (!_auth) _auth = getAuth(getFirebaseApp());
+        return (_auth as any)[prop];
+    },
+});
+
+export const rtdb: Database = new Proxy({} as Database, {
+    get(_, prop) {
+        if (!_rtdb) _rtdb = getDatabase(getFirebaseApp());
+        return (_rtdb as any)[prop];
+    },
+});
+
+export default getFirebaseApp;
+

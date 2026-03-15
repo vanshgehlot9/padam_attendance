@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, setLogLevel } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
@@ -17,19 +17,25 @@ const firebaseConfig = {
 // Initialize Firebase (singleton)
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with offline persistence
+// Initialize Firestore — persistent cache is browser-only (IndexedDB/LocalStorage)
+// On the server (SSR/Node.js) we fall back to memory cache to avoid the error:
+// "IndexedDB persistence is only available on platforms that support LocalStorage"
 let db: ReturnType<typeof getFirestore>;
 
 try {
-    // Attempt to initialize with persistent cache (Multi-tab supported)
+    const isBrowser = typeof window !== "undefined";
     db = initializeFirestore(app, {
-        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+        localCache: isBrowser
+            ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+            : memoryLocalCache(),
     });
 } catch (e) {
-    console.warn("Failed to enable Firestore offline persistence, falling back to default.", e);
-    // Fallback if initializeFirestore fails (e.g., already initialized by another module)
+    console.warn("Failed to initialize Firestore, falling back to default.", e);
     db = getFirestore(app);
 }
+
+// Suppress normal development warnings about IndexedDB primary leases
+setLogLevel('error');
 
 const auth = getAuth(app);
 const rtdb = getDatabase(app);

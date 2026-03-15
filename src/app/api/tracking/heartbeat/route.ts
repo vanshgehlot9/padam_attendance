@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { setHeartbeat, getAllHeartbeats, getEmployee, getOfficeLocation, addAlert, addLocationHistory } from "@/lib/firestore";
 import { getDistanceInMeters } from "@/lib/geo";
 

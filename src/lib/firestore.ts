@@ -199,7 +199,7 @@ export async function getDashboardStats() {
 
 // ==================== ALERTS ====================
 
-export type AlertType = "GPS_OFF" | "LEFT_WORK" | "FIELD_INACTIVE" | "ATTENDANCE_INVALID" | "LATE_ARRIVAL";
+export type AlertType = "GPS_OFF" | "LEFT_WORK" | "FIELD_INACTIVE" | "ATTENDANCE_INVALID" | "LATE_ARRIVAL" | "EARLY_LEAVE";
 export type AlertSeverity = "info" | "warning" | "critical";
 
 export interface Alert {
@@ -211,6 +211,10 @@ export interface Alert {
     severity: AlertSeverity;
     timestamp: number;
     read: boolean;
+    // Optional location fields for EARLY_LEAVE / LEFT_WORK alerts
+    latitude?: number | null;
+    longitude?: number | null;
+    role?: string;
 }
 
 export async function addAlert(data: Omit<Alert, "id">): Promise<Alert> {

@@ -127,7 +127,34 @@ export default function EmployeesPage() {
                                 <td className="px-4 py-4 font-mono text-xs text-slate-600">{emp.shiftStart} – {emp.shiftEnd}</td>
                                 <td className="px-4 py-4 text-slate-600">{emp.graceMinutes}m</td>
                                 <td className="px-4 py-4"><span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${emp.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>{emp.active ? "Active" : "Disabled"}</span></td>
-                                <td className="px-4 py-4"><button onClick={() => openEdit(emp)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><Pencil className="w-4 h-4" /></button></td>
+                                <td className="px-4 py-4">
+                                    <div className="flex gap-1">
+                                        <button onClick={() => openEdit(emp)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors" title="Edit">
+                                            <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (confirm(`Are you sure you want to permanently delete ${emp.name}? This action cannot be undone.`)) {
+                                                    try {
+                                                        const res = await fetch("/api/admin/employees", {
+                                                            method: "DELETE",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ id: emp.id })
+                                                        });
+                                                        if (!res.ok) throw new Error("Failed to delete");
+                                                        load();
+                                                    } catch (e: any) {
+                                                        alert(e.message || "Failed to delete employee");
+                                                    }
+                                                }
+                                            }}
+                                            className="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 text-slate-500 transition-colors"
+                                            title="Delete"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                         {filtered.length === 0 && (

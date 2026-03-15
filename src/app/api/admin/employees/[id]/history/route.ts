@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { getLocationHistory } from "@/lib/firestore";
 
 export async function GET(

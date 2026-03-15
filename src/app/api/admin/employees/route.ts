@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import {
     getAllEmployees, getAttendance, getDashboardStats,
     getDeals, addEmployee, updateEmployee, getOfficeLocation,
@@ -115,6 +117,33 @@ export async function PUT(req: Request) {
         return NextResponse.json({ employee: emp });
     } catch (error: any) {
         console.error("Error updating employee:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+export async function DELETE(req: Request) {
+    try {
+        const body = await req.json();
+        const { id } = body;
+
+        if (!id) return NextResponse.json({ error: "Employee ID is required" }, { status: 400 });
+
+        const { deleteDoc, doc } = await import("firebase/firestore");
+        const { getDb } = await import("@/lib/firebase");
+
+        // 1. Delete from Firebase Auth
+        try {
+            await adminAuth.deleteUser(id);
+        } catch (e: any) {
+            console.error(`Failed to delete auth user ${id}:`, e);
+            // Even if auth fails (e.g., user not found), proceed to delete Firestore doc
+        }
+
+        // 2. Delete from Firestore
+        await deleteDoc(doc(getDb(), "employees", id));
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        console.error("Error deleting employee:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

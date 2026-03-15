@@ -2,27 +2,215 @@
 
 import { useState, useEffect } from "react";
 import {
-    Bell, CheckCircle2, Navigation, AlertTriangle,
-    Clock, MapPin, Activity, ShieldCheck, ChevronRight, Camera
+    Bell, CheckCircle2, Navigation,
+    Clock, MapPin, Activity, ShieldCheck, Camera,
+    AlertOctagon, Factory,
+    User, // Using User instead of LogIn for now as LogIn is an action
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Suspense } from "react";
 import { BaseMap } from "@/components/map/BaseMap";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useLiveData } from "@/components/shared/LocationBlocker";
 
-function DashboardContent() {
-    const { user, employeeData } = useAuth();
-    const { location, attendance } = useLiveData();
+// ── Early Leave Confirmation Sheet (unchanged structure) ────────────────────────
+function EarlyLeaveSheet({
+    shiftEnd,
+    onConfirm,
+    onCancel,
+}: { shiftEnd: string; onConfirm: () => void; onCancel: () => void }) {
+    return (
+        <AnimatePresence>
+            <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-[#0F172A]/40 backdrop-blur-sm z-[90] flex items-end"
+            >
+                <motion.div
+                    initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+                    transition={{ type: "spring", damping: 28, stiffness: 220 }}
+                    className="w-full bg-white rounded-t-[32px] p-6 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.1)]"
+                >
+                    <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" />
+                    <div className="flex items-center gap-4 mb-5">
+                        <div className="w-14 h-14 bg-red-50 rounded-[18px] flex items-center justify-center">
+                            <AlertOctagon className="w-7 h-7 text-[#EF4444]" />
+                        </div>
+                        <div>
+                            <h2 className="text-[20px] font-bold text-[#0F172A]">Early Punch Out</h2>
+                            <p className="text-sm text-[#64748B]">Your shift ends at <span className="font-semibold text-[#0F172A]">{shiftEnd}</span></p>
+                        </div>
+                    </div>
+                    <p className="text-[14px] text-slate-600 bg-red-50/50 border border-red-100/50 rounded-[16px] p-4 mb-8 leading-relaxed">
+                        ⚠️ Punching out early will notify your admin immediately with your location and time. Are you sure?
+                    </p>
+                    <div className="flex gap-3">
+                        <button onClick={onCancel} className="flex-1 h-[52px] rounded-[16px] border border-slate-200 font-[600] text-[#64748B] text-[15px] active:scale-95 transition-transform bg-white">
+                            Cancel
+                        </button>
+                        <button onClick={onConfirm} className="flex-1 h-[52px] rounded-[16px] bg-[#EF4444] text-white font-[600] text-[15px] shadow-[0_4px_14px_0_rgba(239,68,68,0.39)] active:scale-95 transition-transform">
+                            Confirm Punch Out
+                        </button>
+                    </div>
+                </motion.div>
+            </motion.div>
+        </AnimatePresence>
+    );
+}
+
+// ── Factory Punch Panel ───────────────────────────────────────────────────────
+// Note: Adapting factory panel to match the new aesthetic, even though requested focused on office
+function FactoryPunchPanel() {
+    const { attendance, punchIn, punchOut } = useLiveData();
+    const { employeeData } = useAuth();
+    const [loading, setLoading] = useState<"in" | "out" | null>(null);
+    const [showConfirm, setShowConfirm] = useState(false);
     const [tick, setTick] = useState(0);
 
-    // Tick every second for live active time counter
+    useEffect(() => {
+        const iv = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(iv);
+    }, []);
+
+    const shiftStart = employeeData?.shiftStart || attendance.shiftStart || "09:00";
+    const shiftEnd = employeeData?.shiftEnd || attendance.shiftEnd || "18:00";
+    const graceMinutes = employeeData?.graceMinutes ?? 15;
+    const isPunchedIn = !!attendance.arrivalTime;
+    const isPunchedOut = attendance.attendanceStatus === "PUNCHED_OUT";
+    const isLate = attendance.attendanceStatus === "LATE";
+
+    const getActiveDuration = () => {
+        if (!attendance.arrivalTime) return null;
+        const [h, m] = attendance.arrivalTime.split(":").map(Number);
+        const now = new Date();
+        const diffMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000
+            - (h * 3600000 + m * 60000);
+        if (diffMs <= 0) return "00:00:00";
+        const hours = Math.floor(diffMs / 3600000);
+        const mins = Math.floor((diffMs % 3600000) / 60000);
+        const secs = Math.floor((diffMs % 60000) / 1000);
+        return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    };
+
+    const handlePunchIn = async () => {
+        setLoading("in");
+        await punchIn(shiftStart, graceMinutes);
+        setLoading(null);
+    };
+
+    const handlePunchOutRequest = () => {
+        const [eh, em] = shiftEnd.split(":").map(Number);
+        const now = new Date();
+        const isEarly = now.getHours() * 60 + now.getMinutes() < eh * 60 + em;
+        if (isEarly) {
+            setShowConfirm(true);
+        } else {
+            confirmPunchOut();
+        }
+    };
+
+    const confirmPunchOut = async () => {
+        setShowConfirm(false);
+        setLoading("out");
+        await punchOut();
+        setLoading(null);
+    };
+
+    const activeDuration = getActiveDuration();
+
+    return (
+        <>
+            {showConfirm && (
+                <EarlyLeaveSheet
+                    shiftEnd={shiftEnd}
+                    onConfirm={confirmPunchOut}
+                    onCancel={() => setShowConfirm(false)}
+                />
+            )}
+            <div className="px-5 mt-2 flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-amber-50 rounded-[10px] flex items-center justify-center">
+                        <Factory className="w-4 h-4 text-[#F59E0B]" />
+                    </div>
+                    <span className="text-[11px] font-[700] text-amber-600 uppercase tracking-widest">Factory Floor</span>
+                </div>
+
+                {!isPunchedIn && (
+                    <motion.button
+                        whileTap={{ scale: 0.96 }}
+                        onClick={handlePunchIn}
+                        disabled={!!loading}
+                        className="w-full h-[56px] rounded-[16px] bg-gradient-to-br from-[#22C55E] to-[#16A34A] text-white font-[600] text-[16px] shadow-[0_4px_14px_0_rgba(34,197,94,0.39)] flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70"
+                    >
+                        {loading === "in" ? (
+                            <div className="w-5 h-5 border-[2.5px] border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            "Punch In Now"
+                        )}
+                    </motion.button>
+                )}
+
+                {isPunchedIn && !isPunchedOut && (
+                    <div className="space-y-4">
+                        <div className="bg-white rounded-[22px] shadow-sm p-5 flex items-center justify-between">
+                            <div>
+                                <p className="text-[12px] text-[#64748B] font-medium mb-1">Punched In At</p>
+                                <p className="text-[24px] font-[700] text-[#0F172A] tracking-tight">{attendance.arrivalTime}</p>
+                                <span className={`mt-2 inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${isLate ? "bg-amber-50 text-amber-600" : "bg-green-50 text-green-600"}`}>
+                                    {isLate ? "Late" : "On Time"}
+                                </span>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[12px] text-[#64748B] font-medium mb-1">Active Time</p>
+                                <p className="text-[20px] font-[700] text-[#3B82F6] font-mono tracking-tight">{activeDuration || "—"}</p>
+                            </div>
+                        </div>
+
+                        <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={handlePunchOutRequest}
+                            disabled={!!loading}
+                            className="w-full h-[56px] rounded-[16px] bg-gradient-to-br from-[#EF4444] to-[#DC2626] text-white font-[600] text-[16px] shadow-[0_4px_14px_0_rgba(239,68,68,0.39)] flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70"
+                        >
+                            {loading === "out" ? (
+                                <div className="w-5 h-5 border-[2.5px] border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                "Punch Out"
+                            )}
+                        </motion.button>
+                    </div>
+                )}
+
+                {isPunchedOut && (
+                    <div className="bg-white rounded-[22px] shadow-sm p-6 flex flex-col gap-5">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-green-50 rounded-[14px] flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="w-6 h-6 text-[#22C55E]" strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-[16px] font-[700] text-[#0F172A]">Shift Complete</p>
+                                <p className="text-[13px] text-[#64748B] font-medium">Great work today!</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </>
+    );
+}
+
+// ── Main Dashboard Content ────────────────────────────────────────────────────
+function DashboardContent() {
+    const { user, employeeData } = useAuth();
+    const { location, attendance, employeeRole } = useLiveData();
+    const [tick, setTick] = useState(0);
+
+    // Ensure re-render to update timers
     useEffect(() => {
         const interval = setInterval(() => setTick(t => t + 1), 1000);
         return () => clearInterval(interval);
     }, []);
 
-    const role = employeeData?.role || "office";
+    const role = employeeRole || employeeData?.role || "office";
     const employeeName = employeeData?.name || user?.displayName || "User";
     const initials = employeeData?.avatarInitials ||
         employeeName.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
@@ -33,14 +221,9 @@ function DashboardContent() {
     const isInsideRadius = location.isInsideRadius;
     const distanceM = location.distanceFromOffice;
 
-    // Attendance state
     const arrivalTime = attendance.arrivalTime;
     const attendanceStatus = attendance.attendanceStatus;
 
-    // Tracking indicator: green if heartbeat < 60s ago
-    const trackingActive = location.lastHeartbeatAge !== null && location.lastHeartbeatAge < 60000;
-
-    // Active time calculation
     const getActiveTime = () => {
         if (!arrivalTime || !isInsideRadius) return null;
         const [h, m] = arrivalTime.split(":").map(Number);
@@ -50,297 +233,231 @@ function DashboardContent() {
         const diffMs = Math.max(0, nowMs - arrivalMs);
         const hours = Math.floor(diffMs / 3600000);
         const mins = Math.floor((diffMs % 3600000) / 60000);
-        const secs = Math.floor((diffMs % 60000) / 1000);
-        return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+        return `${String(hours).padStart(2, "0")}h ${String(mins).padStart(2, "0")}m`;
     };
 
-    // Date scroller
     const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
     const now = new Date();
     const currentDay = (now.getDay() + 6) % 7;
     const startOfWeek = new Date(now);
     startOfWeek.setDate(now.getDate() - currentDay);
 
-    // Arrival status label
-    const statusLabel = attendanceStatus === "ON_TIME" ? "On Time"
-        : attendanceStatus === "LATE" ? "Late"
-            : attendanceStatus === "LEFT_WORK" ? "Left"
-                : "—";
-    const statusColor = attendanceStatus === "ON_TIME" ? "text-green-600 bg-green-50"
-        : attendanceStatus === "LATE" ? "text-amber-600 bg-amber-50"
-            : attendanceStatus === "LEFT_WORK" ? "text-red-600 bg-red-50"
-                : "text-slate-500 bg-slate-50";
-
     const activeTime = getActiveTime();
 
     return (
-        <div className="flex flex-col bg-slate-50 pb-4">
-            {/* Outside Office Warning Banner */}
-            {isTracking && !isInsideRadius && arrivalTime && (
-                <div className="bg-red-500 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between shadow-md relative z-20">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-xs sm:text-sm font-semibold truncate">You are outside office location</span>
-                    </div>
-                    <span className="text-[10px] sm:text-xs bg-white/20 px-2 py-0.5 rounded-full font-bold flex-shrink-0 ml-2">{distanceM}m</span>
-                </div>
-            )}
-
-            {/* GPS Off Warning */}
-            {gpsOff && (
-                <div className="bg-red-500 text-white px-3 sm:px-4 py-2.5 flex items-center gap-2 shadow-md relative z-20">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    <span className="text-xs sm:text-sm font-semibold">Location Required to Continue Work</span>
-                </div>
-            )}
-
-            {/* Header Profile */}
-            <div className="bg-white px-4 sm:px-6 pt-8 sm:pt-10 pb-4 sm:pb-5 rounded-b-[1.5rem] sm:rounded-b-[2rem] shadow-[0_10px_20px_-10px_rgba(0,0,0,0.05)] mb-4 sm:mb-6 z-10 relative">
-                <div className="flex justify-between items-start mb-4 sm:mb-5">
-                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center border-2 border-white shadow-sm text-[#2563EB] font-bold text-base sm:text-lg flex-shrink-0">
-                            {initials}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight truncate">{employeeName}</h1>
-                            <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 flex-wrap">
-                                <span className="text-[10px] sm:text-xs font-medium text-slate-500 uppercase tracking-wider">{role} Staff</span>
-                                <span className={`px-1.5 sm:px-2 py-[2px] rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider ${gpsOff ? "bg-red-100 text-red-600" :
-                                    attendanceStatus === "LEFT_WORK" ? "bg-red-100 text-red-600" :
-                                        !isInsideRadius ? "bg-amber-100 text-amber-700" :
-                                            "bg-green-100 text-green-700"
-                                    }`}>
-                                    {gpsOff ? "GPS OFF" :
-                                        attendanceStatus === "LEFT_WORK" ? "LEFT WORK" :
-                                            !isInsideRadius ? "OUTSIDE" : "IN OFFICE"}
-                                </span>
+        <div className="flex flex-col bg-[#F4F7FB] min-h-full pb-10">
+            {/* Top Section – Employee Header */}
+            <div className="px-4 pt-6 md:pt-8 pb-3">
+                <div className="bg-white rounded-[22px] p-5 shadow-[0_2px_8px_-4px_rgba(15,23,42,0.05)] border border-white/50 relative overflow-hidden">
+                    <div className="flex justify-between items-start">
+                        {/* Left Side: Avatar & Info */}
+                        <div className="flex gap-3.5">
+                            <div className="w-[50px] h-[50px] bg-[#EEF2FF] rounded-full flex items-center justify-center text-[#3B82F6] font-[700] text-[18px] shrink-0 border-2 border-white shadow-sm ring-1 ring-[#3B82F6]/10">
+                                {initials}
                             </div>
-                            {employeeData && (
-                                <div className="mt-1.5 sm:mt-2 flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                    <span className="text-[10px] sm:text-xs font-medium text-slate-500">
-                                        Your shift: <span className="text-slate-900 font-semibold">{employeeData.shiftStart} – {employeeData.shiftEnd}</span>
+                            <div className="flex flex-col mt-0.5">
+                                <h1 className="text-[18px] font-[700] text-[#0F172A] tracking-tight leading-tight">
+                                    {employeeName}
+                                </h1>
+                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                    <span className="text-[11px] font-[600] text-[#64748B] uppercase tracking-wide bg-slate-50 px-2 py-0.5 rounded-md">
+                                        {role}
                                     </span>
+                                    {role !== "factory" && (
+                                        <span className={`px-2 py-[2px] rounded-full text-[10px] font-bold uppercase tracking-wide ${gpsOff ? "bg-red-50 text-[#EF4444]" :
+                                            attendanceStatus === "LEFT_WORK" ? "bg-red-50 text-[#EF4444]" :
+                                                !isInsideRadius ? "bg-amber-50 text-[#F59E0B]" :
+                                                    "bg-green-50 text-[#22C55E]"
+                                            }`}>
+                                            {gpsOff ? "GPS OFF" :
+                                                attendanceStatus === "LEFT_WORK" ? "LEFT WORK" :
+                                                    !isInsideRadius ? "OUTSIDE" : "INSIDE"}
+                                        </span>
+                                    )}
                                 </div>
-                            )}
+                                {employeeData && (
+                                    <p className="text-[12px] font-[500] text-[#64748B] mt-2 flex items-center gap-1.5">
+                                        <Clock className="w-[14px] h-[14px] text-slate-400" />
+                                        Shift: {employeeData.shiftStart} – {employeeData.shiftEnd}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                    <button className="relative w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full border border-slate-100 bg-slate-50 active:scale-95 transition-transform flex-shrink-0 ml-2">
-                        <div className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
-                        <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                    </button>
-                </div>
 
-                {/* Date Selector — responsive widths */}
-                <div className="flex justify-between items-center gap-1 sm:gap-2">
+                        {/* Right Side: Bell Icon */}
+                        <motion.button 
+                            whileTap={{ scale: 0.9 }}
+                            className="w-10 h-10 rounded-full bg-slate-50/80 flex items-center justify-center relative border border-slate-100 shrink-0"
+                        >
+                            <div className="absolute top-[10px] right-[10px] w-2 h-2 bg-[#EF4444] rounded-full border border-white" />
+                            <Bell className="w-[18px] h-[18px] text-[#0F172A]" strokeWidth={2} />
+                        </motion.button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Date Selector */}
+            <div className="px-4 py-2">
+                <div className="flex justify-between items-center gap-[6px]">
                     {days.map((day, idx) => {
                         const date = new Date(startOfWeek);
                         date.setDate(startOfWeek.getDate() + idx);
+                        const isSelected = idx === currentDay;
+                        
                         return (
-                            <div key={idx} className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl transition-colors ${idx === currentDay ? "bg-[#2563EB] text-white shadow-[0_6px_12px_-4px_rgba(37,99,235,0.4)]" : "bg-transparent text-slate-400"}`}>
-                                <span className="text-[8px] sm:text-[10px] font-medium uppercase mb-0.5 opacity-80">{day}</span>
-                                <span className={`text-sm sm:text-lg font-bold ${idx === currentDay ? "text-white" : "text-slate-800"}`}>{date.getDate()}</span>
-                            </div>
+                            <motion.div 
+                                key={idx} 
+                                whileTap={{ scale: 0.95 }}
+                                className={`flex flex-col items-center justify-center flex-1 h-[64px] rounded-[16px] transition-all cursor-pointer select-none ${
+                                    isSelected 
+                                        ? "bg-[#3B82F6] text-white shadow-[0_6px_14px_-4px_rgba(59,130,246,0.4)]" 
+                                        : "bg-transparent text-[#64748B] hover:bg-slate-200/50"
+                                }`}
+                            >
+                                <span className={`text-[10px] font-[600] uppercase mb-[2px] ${isSelected ? "text-blue-100" : "text-[#64748B]"}`}>
+                                    {day}
+                                </span>
+                                <span className={`text-[18px] font-[700] tracking-tight ${isSelected ? "text-white" : "text-[#0F172A]"}`}>
+                                    {date.getDate()}
+                                </span>
+                            </motion.div>
                         );
                     })}
                 </div>
             </div>
 
-            <div className="px-3 sm:px-5 flex-1 flex flex-col gap-3 sm:gap-4">
-
-                {/* Status Grid — responsive cards */}
-                <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                    {/* Arrival Time Card */}
-                    <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px] sm:min-h-[112px]">
-                        <div className="flex items-start justify-between">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-50 flex items-center justify-center">
-                                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#2563EB]" />
+            {role === "factory" ? (
+                <FactoryPunchPanel />
+            ) : (
+                <div className="px-4 mt-3 flex flex-col gap-4">
+                    
+                    {/* Attendance Status Cards Grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                        
+                        {/* Arrival Card */}
+                        <motion.div whileTap={{ scale: 0.98 }} className="bg-white p-4 rounded-[18px] shadow-[0_2px_8px_-4px_rgba(15,23,42,0.05)] flex flex-col justify-between h-[100px] border border-white">
+                            <Clock className="w-5 h-5 text-[#3B82F6]" strokeWidth={2.5} />
+                            <div>
+                                <p className="text-[12px] font-[500] text-[#64748B] mb-[2px]">Arrival Time</p>
+                                <p className="text-[15px] font-[700] text-[#0F172A] leading-none tracking-tight">
+                                    {arrivalTime || "Not Arrived"}
+                                </p>
                             </div>
-                            {arrivalTime && <span className={`text-[8px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md uppercase tracking-wide ${statusColor}`}>{statusLabel}</span>}
-                        </div>
-                        <div className="mt-auto pt-2">
-                            <p className="text-[10px] sm:text-xs text-slate-500 mb-0.5">Arrival Time</p>
-                            <p className="text-sm sm:text-base font-bold text-slate-900 leading-tight">{arrivalTime || "— Not Arrived"}</p>
-                        </div>
-                    </div>
-
-                    {/* Location Status Card */}
-                    <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px] sm:min-h-[112px]">
-                        <div className="flex items-start justify-between">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-50 flex items-center justify-center">
-                                <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#16A34A]" />
-                            </div>
-                            {!isInsideRadius && isTracking && <span className="text-[8px] sm:text-[10px] font-bold text-red-600 bg-red-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md uppercase tracking-wide">Outside</span>}
-                        </div>
-                        <div className="mt-auto pt-2">
-                            <p className="text-[10px] sm:text-xs text-slate-500 mb-0.5">Loc Status</p>
-                            <p className={`text-sm sm:text-base font-bold leading-tight ${isInsideRadius ? 'text-green-600' : 'text-red-600'}`}>
-                                {gpsOff ? "GPS Off" : isInsideRadius ? "Inside Radius" : "Outside Radius"}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Active Time Card */}
-                    <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px] sm:min-h-[112px]">
-                        <div className="flex items-start justify-between">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-50 flex items-center justify-center">
-                                <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500" />
-                            </div>
-                            {activeTime && isInsideRadius && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
-                        </div>
-                        <div className="mt-auto pt-2">
-                            <p className="text-[10px] sm:text-xs text-slate-500 mb-0.5">Active Time</p>
-                            <p className={`text-sm sm:text-base font-bold font-mono leading-tight ${!isInsideRadius ? 'text-slate-400' : 'text-slate-900'}`}>
-                                {activeTime || "—"}
-                                {!isInsideRadius && arrivalTime && <span className="text-[9px] font-normal text-red-500 ml-1">paused</span>}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Distance Card */}
-                    <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between min-h-[100px] sm:min-h-[112px]">
-                        <div className="flex items-start justify-between">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-50 flex items-center justify-center">
-                                <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-500" />
-                            </div>
-                        </div>
-                        <div className="mt-auto pt-2">
-                            <p className="text-[10px] sm:text-xs text-slate-500 mb-0.5">Distance</p>
-                            <p className={`text-sm sm:text-base font-bold leading-tight ${isInsideRadius ? 'text-green-600' : distanceM && distanceM > 100 ? 'text-red-600' : 'text-slate-900'}`}>
-                                {distanceM !== null ? `${distanceM}m` : "—"}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Live Location Map — responsive height */}
-                <div className="bg-slate-200 rounded-2xl sm:rounded-3xl h-36 sm:h-44 relative overflow-hidden shadow-sm border-2 border-white">
-                    <div className="absolute inset-0 opacity-50 mix-blend-multiply pointer-events-none">
-                        <BaseMap
-                            interactive={false}
-                            center={location.latitude && location.longitude ? [location.longitude, location.latitude] : [73.0733824, 26.3217462]}
-                            zoom={15}
-                        />
-                    </div>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border border-blue-300 bg-blue-100/30"></div>
-                        <div className="absolute z-10 flex flex-col items-center">
-                            <MapPin className={`w-6 h-6 sm:w-8 sm:h-8 drop-shadow-md ${gpsOff ? 'text-slate-400' : isInsideRadius ? 'text-[#2563EB] pb-0.5' : 'text-red-500 pb-0.5'}`} />
-                            <div className={`w-2.5 h-1 rounded-[100%] shadow-lg ${gpsOff ? 'bg-slate-400' : isInsideRadius ? 'bg-[#2563EB]' : 'bg-red-500'}`}></div>
-                        </div>
-                        {isTracking && <div className={`absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full animate-ping opacity-20 ${isInsideRadius ? 'bg-blue-500' : 'bg-red-500'}`}></div>}
-                    </div>
-
-                    {/* Tracking Indicator */}
-                    <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 bg-white/90 backdrop-blur-sm rounded-lg sm:rounded-xl py-1.5 sm:py-2 px-2 sm:px-3 flex items-center gap-1.5 sm:gap-2 shadow-sm border border-white">
-                        {isTracking ? (
-                            trackingActive || location.lastHeartbeatAge === null ? (
-                                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
-                            ) : (
-                                <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 flex-shrink-0" />
-                            )
-                        ) : (
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400 flex-shrink-0" />
-                        )}
-                        <span className="text-[10px] sm:text-xs font-medium text-slate-700 truncate">
-                            {!isTracking ? "Tracking inactive" :
-                                (trackingActive || location.lastHeartbeatAge === null) ? "🟢 Active" : "🔴 Lost"}
-                        </span>
-                        {distanceM !== null && (
-                            <span className="text-[9px] sm:text-xs text-slate-400 ml-auto flex-shrink-0">{distanceM}m</span>
-                        )}
-                    </div>
-                </div>
-
-                {/* Primary Action Button */}
-                <div>
-                    {role === 'office' ? (
-                        <motion.div whileTap={{ scale: 0.98 }} className="w-full bg-slate-100 border border-slate-200 p-3 sm:p-4 rounded-xl flex items-center justify-center gap-2 sm:gap-3">
-                            <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center ${isInsideRadius ? 'bg-green-100' : 'bg-red-100'}`}>
-                                <CheckCircle2 className={`w-3 h-3 sm:w-4 sm:h-4 ${isInsideRadius ? 'text-green-600' : 'text-red-600'}`} />
-                            </div>
-                            <span className={`text-xs sm:text-sm font-semibold ${isInsideRadius ? 'text-slate-600' : 'text-red-600'}`}>
-                                {isInsideRadius ? "Attendance Auto Active" : "Outside — Attendance Paused"}
-                            </span>
                         </motion.div>
-                    ) : (
-                        <motion.button
-                            whileTap={{ scale: 0.98 }}
-                            className="w-full py-3 sm:py-4 rounded-xl font-bold flex items-center justify-center gap-2 text-white shadow-xl text-sm sm:text-base bg-[#2563EB] shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)]"
-                        >
-                            <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
-                            Submit Deal / Work Proof
-                        </motion.button>
-                    )}
-                </div>
 
-                {/* Activity Timeline — GPS Driven */}
-                <div className="bg-white rounded-2xl sm:rounded-[2rem] p-4 sm:p-6 shadow-sm border border-slate-100 flex-1 min-h-[200px] sm:min-h-[240px]">
-                    <h2 className="text-sm sm:text-lg font-bold text-slate-900 mb-4 sm:mb-6 flex items-center justify-between">
-                        Today&apos;s Activity
-                        <span className="text-[9px] sm:text-[10px] font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                            {isTracking && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
-                            Live
-                        </span>
-                    </h2>
+                        {/* Location Card */}
+                        <motion.div whileTap={{ scale: 0.98 }} className="bg-white p-4 rounded-[18px] shadow-[0_2px_8px_-4px_rgba(15,23,42,0.05)] flex flex-col justify-between h-[100px] border border-white">
+                            <ShieldCheck className={`w-5 h-5 stroke-[2.5] ${isInsideRadius ? "text-[#22C55E]" : "text-[#EF4444]"}`} />
+                            <div>
+                                <p className="text-[12px] font-[500] text-[#64748B] mb-[2px]">Loc Status</p>
+                                <p className={`text-[15px] font-[700] leading-none tracking-tight ${isInsideRadius ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                                    {gpsOff ? "GPS Off" : isInsideRadius ? "Inside Radius" : "Outside Radius"}
+                                </p>
+                            </div>
+                        </motion.div>
 
-                    <div className="relative pl-3 sm:pl-4 space-y-4 sm:space-y-6 before:absolute before:inset-y-2 before:left-[6px] sm:before:left-[7px] before:w-[2px] before:bg-slate-100">
-                        {/* LEFT_WORK event */}
-                        {attendanceStatus === "LEFT_WORK" && (
-                            <div className="relative z-10 flex gap-3 sm:gap-4">
-                                <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-red-500 border-[3px] border-white shadow-sm ring-1 ring-slate-100 shrink-0 mt-0.5" />
-                                <div>
-                                    <h4 className="text-xs sm:text-sm font-semibold text-red-600 leading-tight">Left Office</h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">Outside radius for 2+ minutes</p>
-                                </div>
+                        {/* Active Time Card */}
+                        <motion.div whileTap={{ scale: 0.98 }} className="bg-white p-4 rounded-[18px] shadow-[0_2px_8px_-4px_rgba(15,23,42,0.05)] flex flex-col justify-between h-[100px] border border-white">
+                            <Activity className="w-5 h-5 text-[#F59E0B]" strokeWidth={2.5} />
+                            <div>
+                                <p className="text-[12px] font-[500] text-[#64748B] mb-[2px]">Active Time</p>
+                                <p className={`text-[16px] font-[700] font-mono leading-none tracking-tight ${!isInsideRadius ? "text-slate-400" : "text-[#0F172A]"}`}>
+                                    {activeTime || "00h 00m"}
+                                </p>
                             </div>
-                        )}
+                        </motion.div>
 
-                        {/* Arrival event */}
-                        {arrivalTime ? (
-                            <div className="relative z-10 flex gap-3 sm:gap-4">
-                                <div className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full border-[3px] border-white shadow-sm ring-1 ring-slate-100 shrink-0 mt-0.5 ${attendanceStatus === "LATE" ? "bg-amber-500" : "bg-green-500"}`} />
-                                <div>
-                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">
-                                        {attendanceStatus === "LATE" ? "Arrived Late" : "Arrived Office"}
-                                    </h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">
-                                        {arrivalTime}
-                                        {attendanceStatus === "LATE" && <span className="text-amber-600 ml-1">• After grace</span>}
-                                    </p>
-                                </div>
+                        {/* Distance Card */}
+                        <motion.div whileTap={{ scale: 0.98 }} className="bg-white p-4 rounded-[18px] shadow-[0_2px_8px_-4px_rgba(15,23,42,0.05)] flex flex-col justify-between h-[100px] border border-white">
+                            <Navigation className="w-5 h-5 text-[#8B5CF6]" strokeWidth={2.5} />
+                            <div>
+                                <p className="text-[12px] font-[500] text-[#64748B] mb-[2px]">Distance</p>
+                                <p className="text-[15px] font-[700] text-[#0F172A] leading-none tracking-tight">
+                                    {distanceM !== null ? distanceM + "m" : "—"}
+                                </p>
                             </div>
-                        ) : (
-                            <div className="relative z-10 flex gap-3 sm:gap-4">
-                                <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-slate-300 border-[3px] border-white shadow-sm ring-1 ring-slate-100 shrink-0 mt-0.5" />
-                                <div>
-                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-500 leading-tight">Awaiting Arrival</h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1">Enter office radius for auto attendance</p>
-                                </div>
-                            </div>
-                        )}
+                        </motion.div>
 
-                        {/* GPS tracking started */}
-                        {isTracking && (
-                            <div className="relative z-10 flex gap-3 sm:gap-4">
-                                <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-blue-400 border-[3px] border-white shadow-sm ring-1 ring-slate-100 shrink-0 mt-0.5" />
-                                <div>
-                                    <h4 className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">GPS Tracking Started</h4>
-                                    <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">Location tracking active</p>
-                                </div>
-                            </div>
-                        )}
                     </div>
-                </div>
 
-            </div>
+                    {/* Live Location Map Card */}
+                    <div className="bg-slate-200 rounded-[22px] h-[220px] relative overflow-hidden shadow-sm border-[3px] border-white">
+                        <div className="absolute inset-0 opacity-60 mix-blend-multiply pointer-events-none">
+                            <BaseMap
+                                interactive={false}
+                                center={location.latitude && location.longitude ? [location.longitude, location.latitude] : [73.0733824, 26.3217462]}
+                                zoom={15.5}
+                            />
+                        </div>
+                        
+                        {/* Soft overlay gradient for better text legibility at the bottom */}
+                        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-900/10 to-transparent pointer-events-none" />
+
+                        {/* Premium Location Marker */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
+                            {/* Blue radius circle */}
+                            <div className="w-[120px] h-[120px] rounded-full border-2 border-[#3B82F6]/30 bg-[#3B82F6]/10" />
+                            {/* Pin */}
+                            <div className="absolute z-10 flex flex-col items-center">
+                                <div className={`w-10 h-10 flex items-center justify-center rounded-full shadow-lg ${isInsideRadius ? "bg-white text-[#3B82F6]" : "bg-white text-[#EF4444]"}`}>
+                                    <MapPin className="w-5 h-5" strokeWidth={2.5} />
+                                </div>
+                                <div className="w-1.5 h-10 bg-gradient-to-b from-black/20 to-transparent -mt-1 mix-blend-multiply opacity-50" />
+                            </div>
+                            {/* Pulse */}
+                            {isTracking && <div className={`absolute w-[50px] h-[50px] rounded-full animate-ping opacity-30 ${isInsideRadius ? "bg-[#3B82F6]" : "bg-[#EF4444]"}`} />}
+                        </div>
+
+                        {/* Floating Info Bar */}
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md rounded-[12px] px-3 py-2 flex items-center gap-2 shadow-[0_4px_12px_rgba(0,0,0,0.1)] min-w-max border border-white z-20">
+                            {isTracking ? (
+                                <div className={`w-2 h-2 rounded-full flex-shrink-0 animate-pulse ${isInsideRadius ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
+                            ) : (
+                                <div className="w-2 h-2 rounded-full bg-slate-400 flex-shrink-0" />
+                            )}
+                            <span className="text-[12px] font-[600] text-[#0F172A] tracking-wider uppercase flex items-center gap-1.5">
+                                {isTracking ? "Live" : "Inactive"} 
+                                {distanceM !== null && <span className="text-[#64748B] font-medium tracking-normal capitalize flex items-center gap-1">&bull; {distanceM}m away</span>}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Attendance Status Banner */}
+                    <motion.div 
+                        initial={false}
+                        animate={{ scale: 1 }}
+                        className={`w-full p-4 rounded-[16px] flex items-center justify-between border ${
+                            gpsOff ? "bg-red-50/50 border-red-100 text-[#EF4444]" :
+                            isInsideRadius ? "bg-green-50/50 border-green-100 text-[#22C55E]" : 
+                            "bg-red-50/50 border-red-100 text-[#EF4444]"
+                        }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-white shadow-sm`}>
+                                <CheckCircle2 className={`w-5 h-5 ${isInsideRadius ? "text-[#22C55E]" : "text-[#EF4444]"}`} strokeWidth={2.5} />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className={`text-[11px] font-[600] uppercase tracking-wider mb-[2px] ${isInsideRadius ? "text-green-600/70" : "text-red-500/80"}`}>
+                                    Status
+                                </span>
+                                <span className={`text-[14px] font-[700] tracking-tight text-[#0F172A]`}>
+                                    {gpsOff ? "Location Services Disabled" :
+                                     isInsideRadius ? "Ready to Mark Attendance" : 
+                                     "Outside — Attendance Paused"}
+                                </span>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                </div>
+            )}
         </div>
     );
 }
 
 export default function Dashboard() {
     return (
-        <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>}>
+        <Suspense fallback={<div className="flex items-center justify-center h-full min-h-[500px]"><div className="w-8 h-8 border-[3px] border-[#3B82F6] border-t-transparent rounded-full animate-spin" /></div>}>
             <DashboardContent />
         </Suspense>
     );

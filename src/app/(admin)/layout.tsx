@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -9,6 +9,23 @@ import {
     Settings, ChevronLeft, ChevronRight, Radio, Shield, Bell, LogOut, CalendarDays
 } from "lucide-react";
 import { AdminAuthProvider, useAdminAuth } from "@/components/providers/AdminAuthProvider";
+
+/** Real-time unread alert count from Firestore */
+function useUnreadAlertCount() {
+    const [count, setCount] = useState(0);
+    useEffect(() => {
+        let unsub: (() => void) | null = null;
+        const start = async () => {
+            const { collection, query, where, onSnapshot } = await import("firebase/firestore");
+            const { getDb } = await import("@/lib/firebase");
+            const q = query(collection(getDb(), "alerts"), where("read", "==", false));
+            unsub = onSnapshot(q, snap => setCount(snap.size), () => { });
+        };
+        start().catch(console.error);
+        return () => unsub?.();
+    }, []);
+    return count;
+}
 
 const NAV_ITEMS = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
@@ -25,6 +42,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
     const [collapsed, setCollapsed] = useState(false);
     const pathname = usePathname();
     const { logout } = useAdminAuth();
+    const unreadAlertCount = useUnreadAlertCount();
 
     return (
         <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -49,6 +67,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
                 <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto hide-scrollbar">
                     {NAV_ITEMS.map((item) => {
                         const isActive = pathname === item.href || (item.href !== "/admin" && pathname.startsWith(item.href));
+                        const isAlertsItem = item.href === "/admin/alerts";
                         return (
                             <Link
                                 key={item.href}
@@ -62,8 +81,20 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
                                 `}
                                 title={collapsed ? item.label : undefined}
                             >
-                                <item.icon className={`w-5 h-5 shrink-0 ${isActive ? "text-white" : "text-slate-500 group-hover:text-white"}`} />
-                                {!collapsed && <span>{item.label}</span>}
+                                <div className="relative">
+                                    <item.icon className={`w-5 h-5 shrink-0 ${isActive ? "text-white" : "text-slate-500 group-hover:text-white"}`} />
+                                    {isAlertsItem && unreadAlertCount > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                                            {unreadAlertCount > 99 ? "99+" : unreadAlertCount}
+                                        </span>
+                                    )}
+                                </div>
+                                {!collapsed && <span className="flex-1">{item.label}</span>}
+                                {!collapsed && isAlertsItem && unreadAlertCount > 0 && (
+                                    <span className="ml-auto px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full animate-pulse">
+                                        {unreadAlertCount}
+                                    </span>
+                                )}
                             </Link>
                         );
                     })}

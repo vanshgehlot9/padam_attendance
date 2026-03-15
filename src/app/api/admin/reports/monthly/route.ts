@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { getActiveEmployees, getHolidays } from "@/lib/firestore";
 import { collection, query, getDocs, where } from "firebase/firestore";
 import { getDb } from "@/lib/firebase";

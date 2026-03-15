@@ -602,9 +602,22 @@ export default function LiveMapPage() {
                         {/* Action Footer */}
                         <div className="p-4 bg-white border-t border-slate-100 flex flex-col gap-2 shrink-0">
                             {/* Live Routing */}
-                            <button onClick={handleNavigate} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2">
-                                <Navigation2 className="w-5 h-5" /> Live Route to Employee
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={handleNavigate} className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 text-sm">
+                                    <Navigation2 className="w-4 h-4" /> Live Route
+                                </button>
+                                {selected.lat && selected.lng && (
+                                    <a
+                                        href={`https://www.google.com/maps/dir/?api=1&origin=26.3217462,73.0733824&destination=${selected.lat},${selected.lng}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 py-3 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 text-sm"
+                                    >
+                                        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m11.5 5 9 4-9 4-4 9-4-9 9-4Z" /><path d="m11.5 5-9 4 9 4 4 9 4-9-9-4Z" /></svg>
+                                        Get Directions
+                                    </a>
+                                )}
+                            </div>
 
                             {/* History Replay Panel */}
                             <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl p-3">

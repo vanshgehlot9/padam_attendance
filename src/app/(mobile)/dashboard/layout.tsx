@@ -15,44 +15,69 @@ function BottomNavContent({ onCaptureClick }: { onCaptureClick: () => void }) {
     const searchParams = useSearchParams();
     const role = searchParams.get("role") || "office";
 
+    // Reordered nav items to make space for the FAB in the center
     const navItems = [
         { icon: Home, label: "Home", href: `/dashboard?role=${role}`, active: pathname === "/dashboard" },
         { icon: Activity, label: "Activity", href: `/dashboard/activity?role=${role}`, active: pathname.includes("activity") },
-        { icon: Camera, label: "Capture", isPrimary: true },
+        { isSeparator: true }, // Spacer for FAB
         { icon: MapIcon, label: "Map", href: `/dashboard/map?role=${role}`, active: pathname.includes("map") },
         { icon: User, label: "Profile", href: `/dashboard/profile?role=${role}`, active: pathname.includes("profile") },
     ];
 
     return (
-        <div className="absolute bottom-0 w-full bg-white border-t border-slate-100 pb-safe pt-2 px-6 z-[60]">
-            <div className="flex justify-between items-center h-16 pb-2">
-                {navItems.map((item, idx) => {
-                    if (item.isPrimary) {
+        <div className="absolute bottom-0 w-full left-1/2 -translate-x-1/2 max-w-[430px] z-[60]">
+            {/* The Floating Action Button (FAB) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-6 flex justify-center z-20">
+                <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={onCaptureClick}
+                    className="relative flex items-center justify-center w-[58px] h-[58px] rounded-full bg-gradient-to-br from-[#3B82F6] to-[#2563EB] text-white shadow-[0_8px_20px_-4px_rgba(59,130,246,0.6)] outline-none ring-4 ring-[#F4F7FB]"
+                    aria-label="Submit Deal"
+                >
+                    <div className="absolute inset-0 rounded-full border border-white/20" />
+                    {/* Continuous subtle pulse ring */}
+                    <div className="absolute inset-0 rounded-full border-2 border-[#3B82F6]/40 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite] pointer-events-none" />
+                    <Camera className="w-[26px] h-[26px]" strokeWidth={2} />
+                </motion.button>
+            </div>
+
+            {/* Background of the bottom nav */}
+            <div className="bg-white border-t border-slate-100 rounded-t-[20px] shadow-[0_-4px_24px_-8px_rgba(15,23,42,0.08)] pb-safe pt-2 px-6 relative z-10">
+                <div className="flex justify-between items-center h-[60px] pb-1">
+                    {navItems.map((item, idx) => {
+                        if (item.isSeparator) {
+                            return <div key={`sep-${idx}`} className="w-14" />; // Empty space for the center FAB
+                        }
                         return (
-                            <button
+                            <Link
                                 key={idx}
-                                onClick={onCaptureClick}
-                                className="relative -top-6 flex items-center justify-center w-14 h-14 bg-[#2563EB] text-white rounded-full shadow-[0_8px_20px_0_rgba(37,99,235,0.4)] hover:scale-105 transition-transform active:scale-95"
-                                aria-label="Submit Deal"
+                                href={item.href || '#'}
+                                className="flex flex-col items-center justify-center min-w-[3.5rem] flex-1 group"
                             >
-                                <Camera className="w-6 h-6" />
-                            </button>
+                                <motion.div 
+                                    whileTap={{ scale: 0.9 }}
+                                    className="flex flex-col items-center gap-1"
+                                >
+                                    {item.icon && (
+                                        <item.icon 
+                                            className={`w-[22px] h-[22px] transition-colors duration-200 ${
+                                                item.active ? "text-[#3B82F6] stroke-[2.5]" : "text-[#64748B] group-hover:text-slate-800 stroke-2"
+                                            }`} 
+                                        />
+                                    )}
+                                    <span 
+                                        className={`text-[10px] font-[600] tracking-wide transition-colors duration-200 ${
+                                            item.active ? "text-[#3B82F6]" : "text-[#64748B] group-hover:text-slate-800"
+                                        }`}
+                                    >
+                                        {item.label}
+                                    </span>
+                                </motion.div>
+                            </Link>
                         );
-                    }
-                    return (
-                        <Link
-                            key={idx}
-                            href={item.href || '#'}
-                            className={`flex flex-col items-center gap-1 min-w-[3rem] ${item.active ? "text-[#2563EB]" : "text-slate-400 hover:text-slate-600"
-                                }`}
-                        >
-                            <item.icon className={`w-5 h-5 ${item.active ? "stroke-[2.5]" : "stroke-2"}`} />
-                            <span className={`text-[10px] font-medium ${item.active ? "text-[#2563EB]" : ""}`}>
-                                {item.label}
-                            </span>
-                        </Link>
-                    );
-                })}
+                    })}
+                </div>
             </div>
         </div>
     );
@@ -352,15 +377,23 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     const [isCaptureModalOpen, setCaptureModalOpen] = useState(false);
 
     return (
-        <div className="flex flex-col flex-1 bg-slate-50 relative pb-[84px] overflow-hidden">
-            <div className="flex-1 overflow-y-auto overflow-x-hidden hide-scrollbar">
-                {children}
-            </div>
-            <Suspense fallback={null}>
-                <BottomNavContent onCaptureClick={() => setCaptureModalOpen(true)} />
-            </Suspense>
+        <div className="flex flex-col flex-1 bg-slate-900 relative h-[100dvh] overflow-hidden">
+            {/* The mobile container - Center it on desktop, full width on mobile */}
+            <div className="w-full max-w-[430px] mx-auto h-full flex flex-col relative bg-[#F4F7FB] shadow-[0_0_40px_rgba(0,0,0,0.1)]">
+                
+                {/* Scrollable content area */}
+                <div className="flex-1 overflow-y-auto overflow-x-hidden hide-scrollbar pb-[90px]">
+                    {children}
+                </div>
+                
+                {/* Bottom Navigation */}
+                <Suspense fallback={null}>
+                    <BottomNavContent onCaptureClick={() => setCaptureModalOpen(true)} />
+                </Suspense>
 
-            <GlobalCaptureModal isOpen={isCaptureModalOpen} onClose={() => setCaptureModalOpen(false)} />
+                {/* Modals overlay inside the mobile container */}
+                <GlobalCaptureModal isOpen={isCaptureModalOpen} onClose={() => setCaptureModalOpen(false)} />
+            </div>
         </div>
     );
 }
@@ -371,11 +404,11 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     const { user, employeeData } = useAuth();
-    // Use authenticated employee ID, fallback to UID or a default
     const employeeId = employeeData?.id || user?.uid || "unknown";
+    const employeeRole = employeeData?.role || "office";
 
     return (
-        <LocationBlocker employeeId={employeeId}>
+        <LocationBlocker employeeId={employeeId} employeeRole={employeeRole}>
             <LayoutContent>{children}</LayoutContent>
         </LocationBlocker>
     );

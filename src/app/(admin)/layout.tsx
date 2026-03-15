@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard, Users, Map, Briefcase, FileBarChart2,
-    Settings, ChevronLeft, ChevronRight, Radio, Shield, Bell, LogOut
+    Settings, ChevronLeft, ChevronRight, Radio, Shield, Bell, LogOut, CalendarDays
 } from "lucide-react";
 import { AdminAuthProvider, useAdminAuth } from "@/components/providers/AdminAuthProvider";
 
@@ -16,7 +16,8 @@ const NAV_ITEMS = [
     { icon: Map, label: "Live Map", href: "/admin/live-map" },
     { icon: Briefcase, label: "Field Staff", href: "/admin/field" },
     { icon: Bell, label: "Alerts", href: "/admin/alerts" },
-    { icon: FileBarChart2, label: "Reports", href: "/admin/reports" },
+    { icon: FileBarChart2, label: "Daily Reports", href: "/admin/reports" },
+    { icon: CalendarDays, label: "Monthly Reports", href: "/admin/reports/monthly" },
     { icon: Settings, label: "Settings", href: "/admin/settings" },
 ];
 

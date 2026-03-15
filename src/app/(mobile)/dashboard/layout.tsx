@@ -60,23 +60,130 @@ function BottomNavContent({ onCaptureClick }: { onCaptureClick: () => void }) {
 
 function GlobalCaptureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState("0%");
     const [isSuccess, setIsSuccess] = useState(false);
     const [notes, setNotes] = useState("");
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [compressedBlob, setCompressedBlob] = useState<Blob | null>(null);
     const { user, employeeData } = useAuth();
 
     const accuracy = 12; // Will be replaced by live GPS accuracy from useLiveLocation
 
-    const handleSubmit = async () => {
-        setIsSubmitting(true);
-        try {
-            // Get current position
-            const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                });
-            });
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
+        // Show quick preview
+        const objectUrl = URL.createObjectURL(file);
+        setPreviewUrl(objectUrl);
+
+        // Compress image using Canvas
+        const img = new Image();
+        img.src = objectUrl;
+        img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const MAX_WIDTH = 1000;
+            const MAX_HEIGHT = 1000;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > MAX_WIDTH) {
+                    height *= MAX_WIDTH / width;
+                    width = MAX_WIDTH;
+                }
+            } else {
+                if (height > MAX_HEIGHT) {
+                    width *= MAX_HEIGHT / height;
+                    height = MAX_HEIGHT;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+                ctx.drawImage(img, 0, 0, width, height);
+                // Compress to JPEG at 70% quality (results in KB instead of MB)
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) setCompressedBlob(blob);
+                    },
+                    "image/jpeg",
+                    0.7
+                );
+            }
+        };
+    };
+
+    const uploadToCloudinary = async (blob: Blob): Promise<string> => {
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+        if (!cloudName || !uploadPreset) {
+            throw new Error("Cloudinary credentials missing. Please check .env.local");
+        }
+
+        const formData = new FormData();
+        formData.append("file", blob, "deal_proof.jpg");
+        formData.append("upload_preset", uploadPreset);
+
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!res.ok) throw new Error("Failed to upload image to Cloudinary");
+        const data = await res.json();
+        return data.secure_url;
+    };
+
+    const handleSubmit = async () => {
+        if (!compressedBlob) {
+            alert("Please capture a photo first.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        setUploadProgress("Getting location...");
+        try {
+            // Get current position with fallback for low accuracy
+            const getPosition = async (): Promise<GeolocationPosition> => {
+                return new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        resolve,
+                        (err) => {
+                            if (err.code === 3) {
+                                // High accuracy timed out, fallback to low accuracy
+                                console.warn("High accuracy GPS timed out, falling back to low accuracy...");
+                                navigator.geolocation.getCurrentPosition(
+                                    resolve,
+                                    reject,
+                                    {
+                                        enableHighAccuracy: false,
+                                        timeout: 15000,
+                                        maximumAge: 60000 // Accept 1-minute old cached location
+                                    }
+                                );
+                            } else {
+                                reject(err);
+                            }
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000, // Wait 10 seconds for high accuracy
+                            maximumAge: 10000, // 10 second old cache
+                        }
+                    );
+                });
+            };
+
+            const position = await getPosition();
+
+            setUploadProgress("Uploading photo...");
+            const photoUrl = await uploadToCloudinary(compressedBlob);
+
+            setUploadProgress("Saving deal...");
             const employeeId = employeeData?.id || user?.uid || "unknown";
 
             const res = await fetch("/api/tracking/submit-deal", {
@@ -89,7 +196,7 @@ function GlobalCaptureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     accuracy: position.coords.accuracy,
                     timestamp: Date.now(),
                     notes,
-                    photo_url: "",
+                    photo_url: photoUrl,
                 }),
             });
 
@@ -98,13 +205,31 @@ function GlobalCaptureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 setTimeout(() => {
                     setIsSuccess(false);
                     setNotes("");
+                    setPreviewUrl(null);
+                    setCompressedBlob(null);
+                    setUploadProgress("0%");
                     onClose();
                 }, 2000);
+            } else {
+                const errData = await res.json();
+                throw new Error(errData.error || "Backend save failed");
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Deal submission failed:", err);
+
+            // Handle Geolocation Errors specifically
+            if (err.code === 1) {
+                alert("Location access denied. Please allow location permissions to submit deals.");
+            } else if (err.code === 2) {
+                alert("Location unavailable. Please check your GPS signal.");
+            } else if (err.code === 3) {
+                alert("Location request timed out. Please try again outside or check your signal.");
+            } else {
+                alert(`Error: ${err.message || "Failed to submit deal"}`);
+            }
         } finally {
             setIsSubmitting(false);
+            setUploadProgress("0%");
         }
     };
 
@@ -150,11 +275,34 @@ function GlobalCaptureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
                                 <div className="space-y-5 overflow-y-auto hide-scrollbar flex-1 pb-24">
                                     {/* Camera Input */}
-                                    <div className="w-full h-48 bg-slate-100 rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-slate-300 relative overflow-hidden">
-                                        <Camera className="w-8 h-8 text-slate-400 mb-2" />
-                                        <span className="text-sm font-medium text-slate-500">Tap to take photo</span>
-                                        <input type="file" accept="image/*" capture="environment" className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-                                    </div>
+                                    {previewUrl ? (
+                                        <div className="w-full h-48 bg-slate-900 rounded-2xl relative overflow-hidden group">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img src={previewUrl} alt="Preview" className="w-full h-full object-cover opacity-90" />
+                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span className="text-white font-semibold text-sm flex items-center gap-2">
+                                                    <Camera className="w-4 h-4" /> Retake Photo
+                                                </span>
+                                            </div>
+                                            <input type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+
+                                            {isSubmitting && (
+                                                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center space-y-3 z-10 backdrop-blur-sm">
+                                                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                    <p className="text-white text-xs font-bold font-mono bg-black/40 px-3 py-1 rounded-full">{uploadProgress}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="w-full h-48 bg-slate-100 rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-slate-300 relative overflow-hidden group hover:border-[#2563EB] hover:bg-blue-50 transition-colors">
+                                            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 group-hover:scale-110 transition-transform">
+                                                <Camera className="w-6 h-6 text-[#2563EB]" />
+                                            </div>
+                                            <span className="text-sm font-bold text-slate-700">Tap to capture proof</span>
+                                            <span className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Required</span>
+                                            <input type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10" />
+                                        </div>
+                                    )}
 
                                     {/* GPS Coordinates Section */}
                                     <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
@@ -188,7 +336,7 @@ function GlobalCaptureModal({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                                         className="w-full h-14 text-lg font-bold shadow-xl"
                                         disabled={isSubmitting}
                                     >
-                                        {isSubmitting ? "Submitting..." : "Complete Submission"}
+                                        {isSubmitting ? "Processing..." : "Complete Submission"}
                                     </Button>
                                 </div>
                             </>

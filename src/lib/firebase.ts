@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
@@ -17,7 +17,20 @@ const firebaseConfig = {
 // Initialize Firebase (singleton)
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-const db = getFirestore(app);
+// Initialize Firestore with offline persistence
+let db: ReturnType<typeof getFirestore>;
+
+try {
+    // Attempt to initialize with persistent cache (Multi-tab supported)
+    db = initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
+} catch (e) {
+    console.warn("Failed to enable Firestore offline persistence, falling back to default.", e);
+    // Fallback if initializeFirestore fails (e.g., already initialized by another module)
+    db = getFirestore(app);
+}
+
 const auth = getAuth(app);
 const rtdb = getDatabase(app);
 

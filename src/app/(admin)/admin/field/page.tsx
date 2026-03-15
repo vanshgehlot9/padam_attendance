@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Camera, MapPin, Clock, User, Filter } from "lucide-react";
+import { Camera, MapPin, Clock, User, Filter, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function FieldStaffPage() {
     const [data, setData] = useState<any>(null);
     const [filterEmp, setFilterEmp] = useState("");
+    const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
     useEffect(() => {
         (async () => {
@@ -76,11 +78,23 @@ export default function FieldStaffPage() {
                     return (
                         <div key={deal.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                             {/* Photo area */}
-                            <div className="h-40 bg-slate-100 flex items-center justify-center border-b border-slate-100">
-                                <div className="text-center">
-                                    <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
-                                    <span className="text-xs text-slate-400">Photo Proof</span>
-                                </div>
+                            <div
+                                className="h-48 bg-slate-100 flex items-center justify-center border-b border-slate-100 relative group overflow-hidden cursor-pointer"
+                                onClick={() => deal.photoUrl && setSelectedPhoto(deal.photoUrl)}
+                            >
+                                {deal.photoUrl ? (
+                                    <>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={deal.photoUrl} alt="Deal Proof" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                                        {/* Remove the standalone anchor tag and rely on the full div click */}
+                                    </>
+                                ) : (
+                                    <div className="text-center">
+                                        <Camera className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                                        <span className="text-xs text-slate-400">No Photo</span>
+                                    </div>
+                                )}
                             </div>
                             <div className="p-4 space-y-3">
                                 <div className="flex items-center justify-between">
@@ -103,6 +117,39 @@ export default function FieldStaffPage() {
                     );
                 })}
             </div>
+
+            {/* Photo Preview Modal */}
+            <AnimatePresence>
+                {selectedPhoto && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedPhoto(null)}
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-zoom-out"
+                    >
+                        <button
+                            className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPhoto(null);
+                            }}
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                        <motion.img
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                            src={selectedPhoto}
+                            alt="Full Screen Deal Proof"
+                            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-default"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

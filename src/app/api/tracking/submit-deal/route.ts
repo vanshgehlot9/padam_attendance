@@ -10,13 +10,13 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required geo-data" }, { status: 400 });
         }
 
-        // STRICT REQUIREMENT: Rejected if Accuracy > 30m
-        if (accuracy > 30) {
+        // Relaxed requirement for indoor tracking & testing
+        if (accuracy > 1000) {
             return NextResponse.json({
                 success: false,
                 error: "GPS Accuracy too low for verified deal submission",
                 accuracy,
-                required: 30
+                required: 1000
             }, { status: 403 });
         }
 

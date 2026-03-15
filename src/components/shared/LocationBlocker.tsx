@@ -1,7 +1,7 @@
 "use client";
 
 import { useLiveLocation, LocationState, AttendanceState } from "@/hooks/useLiveLocation";
-import { MapPinOff } from "lucide-react";
+import { MapPinOff, WifiOff } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 
 // Context to share live location data with all dashboard children
@@ -29,8 +29,23 @@ export function useLiveData() {
 export function LocationBlocker({ employeeId, children }: { employeeId: string, children: React.ReactNode }) {
     const { location, attendance } = useLiveLocation(employeeId);
     const [isClient, setIsClient] = useState(false);
+    const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
-    useEffect(() => { setIsClient(true); }, []);
+    // eslint-disable-next-line
+    useEffect(() => {
+        setIsClient(true);
+
+        const handleOffline = () => setIsOffline(true);
+        const handleOnline = () => setIsOffline(false);
+
+        window.addEventListener("offline", handleOffline);
+        window.addEventListener("online", handleOnline);
+
+        return () => {
+            window.removeEventListener("offline", handleOffline);
+            window.removeEventListener("online", handleOnline);
+        };
+    }, []);
 
     if (!isClient) return <>{children}</>;
 
@@ -57,6 +72,16 @@ export function LocationBlocker({ employeeId, children }: { employeeId: string, 
 
     return (
         <LiveContext.Provider value={{ location, attendance }}>
+            {/* Offline Mode Banner */}
+            {isOffline && (
+                <div className="bg-amber-500 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between shadow-md relative z-50 animate-in slide-in-from-top">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <WifiOff className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm font-semibold truncate">You are offline. Data will sync when connected.</span>
+                    </div>
+                </div>
+            )}
+
             {children}
         </LiveContext.Provider>
     );

@@ -169,6 +169,18 @@ export async function saveOfficeLocation(location: OfficeLocation): Promise<void
     await setDoc(doc(getDb(), "settings", "office"), location);
 }
 
+export async function getHolidays(): Promise<string[]> {
+    const snap = await getDoc(doc(getDb(), "settings", "holidays"));
+    if (snap.exists()) {
+        return snap.data().dates || [];
+    }
+    return [];
+}
+
+export async function saveHolidays(dates: string[]): Promise<void> {
+    await setDoc(doc(getDb(), "settings", "holidays"), { dates });
+}
+
 // ==================== DASHBOARD STATS ====================
 
 export async function getDashboardStats() {

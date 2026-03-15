@@ -88,33 +88,66 @@ export function useLiveLocation(employeeId: string) {
         }
     }, [employeeId]);
 
-    // Auto-mark attendance when entering radius
+    // Auto-mark attendance when entering radius (Direct Firestore SDK for Offline Support)
     const tryMarkAttendance = useCallback(async (lat: number, lng: number) => {
         if (arrivalMarkedRef.current) return;
 
         try {
-            const res = await fetch("/api/attendance/verify", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    employee_id: employeeId,
-                    latitude: lat,
-                    longitude: lng,
-                    type: "office_entry",
-                }),
-            });
-            const data = await res.json();
-            if (data.success) {
-                arrivalMarkedRef.current = true;
-                setAttendance(prev => ({
-                    ...prev,
-                    arrivalTime: data.arrivalTime,
-                    attendanceStatus: data.status === "LATE" ? "LATE" : "ON_TIME",
-                    shiftStart: data.shiftStart || prev.shiftStart,
-                }));
+            const { doc, getDoc, setDoc } = await import("firebase/firestore");
+            const { getDb } = await import("@/lib/firebase");
+            const db = getDb();
+
+            const today = new Date().toISOString().split("T")[0];
+            const attDocId = `${employeeId}_${today}`;
+
+            // Check employee shift info first
+            const empSnap = await getDoc(doc(db, "employees", employeeId));
+            let shiftStart = "09:00";
+            let graceMinutes = 15;
+
+            if (empSnap.exists()) {
+                const emp = empSnap.data();
+                shiftStart = emp.shiftStart || shiftStart;
+                graceMinutes = emp.graceMinutes || graceMinutes;
             }
+
+            // Determine if late
+            const now = new Date();
+            const currentTimeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+            const parseTime = (timeStr: string) => {
+                const [h, m] = timeStr.split(":").map(Number);
+                return h * 60 + m;
+            };
+
+            const arrivalMins = parseTime(currentTimeStr);
+            const shiftMins = parseTime(shiftStart);
+            const isLate = arrivalMins > (shiftMins + graceMinutes);
+
+            const attendanceStatus = isLate ? "LATE" : "ON_TIME";
+
+            // Write Attendance Record directly to Firestore (Offline supported)
+            await setDoc(doc(db, "attendance", attDocId), {
+                employeeId,
+                date: today,
+                status: attendanceStatus,
+                arrivalTime: currentTimeStr,
+                departureTime: null,
+                latitude: lat,
+                longitude: lng,
+                distanceFromOffice: Math.round(getDistanceInMeters(OFFICE_COORDS.latitude, OFFICE_COORDS.longitude, lat, lng))
+            }, { merge: true });
+
+            arrivalMarkedRef.current = true;
+            setAttendance(prev => ({
+                ...prev,
+                arrivalTime: currentTimeStr,
+                attendanceStatus: attendanceStatus,
+                shiftStart: shiftStart,
+            }));
+
         } catch (err) {
-            console.error("Auto-attendance failed:", err);
+            console.error("Auto-attendance (offline write) failed:", err);
         }
     }, [employeeId]);
 

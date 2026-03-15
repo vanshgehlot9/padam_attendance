@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Save, MapPin, Loader2 } from "lucide-react";
+import { Save, MapPin, Loader2, Calendar as CalendarIcon, X } from "lucide-react";
 
 const MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
@@ -31,6 +31,9 @@ export default function SettingsPage() {
     const [name, setName] = useState("Main Office — Jodhpur");
     const [saved, setSaved] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [holidays, setHolidays] = useState<string[]>([]);
+    const [newHoliday, setNewHoliday] = useState("");
+    const [savingHolidays, setSavingHolidays] = useState(false);
     const [loading, setLoading] = useState(true);
 
     // Load office location from Firestore on mount
@@ -44,6 +47,13 @@ export default function SettingsPage() {
                     setLng(data.officeLocation.longitude);
                     setRadius(data.officeLocation.radius);
                     setName(data.officeLocation.name);
+                }
+
+                // Fetch holidays
+                const holRes = await fetch("/api/admin/settings/holidays");
+                const holData = await holRes.json();
+                if (holData.holidays) {
+                    setHolidays(holData.holidays);
                 }
             } catch (e) {
                 console.error("Failed to load office settings:", e);
@@ -114,6 +124,35 @@ export default function SettingsPage() {
         }
     };
 
+    const handleSaveHolidays = async (updatedHolidays: string[]) => {
+        setSavingHolidays(true);
+        try {
+            await fetch("/api/admin/settings/holidays", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dates: updatedHolidays }),
+            });
+        } catch (e) {
+            console.error("Failed to save holidays:", e);
+        } finally {
+            setSavingHolidays(false);
+        }
+    };
+
+    const addHoliday = () => {
+        if (!newHoliday || holidays.includes(newHoliday)) return;
+        const updated = [...holidays, newHoliday].sort();
+        setHolidays(updated);
+        setNewHoliday("");
+        handleSaveHolidays(updated);
+    };
+
+    const removeHoliday = (dateObj: string) => {
+        const updated = holidays.filter(h => h !== dateObj);
+        setHolidays(updated);
+        handleSaveHolidays(updated);
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -181,6 +220,58 @@ export default function SettingsPage() {
                         <p className="text-xs text-blue-700 font-medium leading-relaxed">
                             💡 Drag the marker on the map to set office location. Adjust the slider to change the attendance validation radius. Only GPS coordinates within this radius will be accepted for auto-attendance.
                         </p>
+                    </div>
+
+                    {/* Holidays Settings Module */}
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
+                        <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <CalendarIcon className="w-4 h-4 text-orange-500" />
+                            Manage Holidays
+                        </h3>
+                        <p className="text-xs text-slate-500 mb-4">
+                            Select dates that should be marked as holidays in the attendance system. Note: Sundays are no longer automatic holidays unless explicitly added.
+                        </p>
+
+                        <div className="flex items-center gap-3 mb-5">
+                            <input
+                                type="date"
+                                className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                value={newHoliday}
+                                onChange={(e) => setNewHoliday(e.target.value)}
+                            />
+                            <button
+                                onClick={addHoliday}
+                                disabled={!newHoliday || savingHolidays}
+                                className="px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                            >
+                                {savingHolidays ? "Adding..." : "Add"}
+                            </button>
+                        </div>
+
+                        <div className="max-h-[250px] overflow-y-auto space-y-2 pr-2">
+                            {holidays.length === 0 ? (
+                                <div className="text-center py-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                    <p className="text-xs text-slate-400">No custom holidays configured.</p>
+                                </div>
+                            ) : (
+                                holidays.map((date) => (
+                                    <div key={date} className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg group hover:border-slate-300 transition-colors">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                            <span className="text-sm font-semibold text-slate-700">
+                                                {new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => removeHoliday(date)}
+                                            className="text-slate-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
